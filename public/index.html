@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flipeek — Game Kartu Multiplayer</title>
+<script src="/socket.io/socket.io.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0f0e17; --surface:#1a1829; --surface2:#22203a;
+    --accent:#ff6b35; --accent2:#f7c59f; --gold:#ffd700;
+    --green:#06d6a0; --red:#ef476f; --blue:#118ab2;
+    --text:#fffffe; --muted:#a7a9be;
+    --border:rgba(255,255,255,0.1);
+    --shadow:0 8px 32px rgba(0,0,0,.4);
+    --r:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 20%,rgba(123,45,139,.15) 0%,transparent 50%),radial-gradient(ellipse at 80% 80%,rgba(255,107,53,.1) 0%,transparent 50%);pointer-events:none;z-index:0}
+
+  /* ── SCREENS ── */
+  .screen{display:none;min-height:100vh;position:relative;z-index:1}
+  .screen.active{display:flex;flex-direction:column}
+
+  /* ── LOBBY ── */
+  #s-lobby{align-items:center;justify-content:center;padding:20px;gap:20px}
+  .logo{font-family:'Fredoka One',cursive;font-size:clamp(3rem,10vw,6rem);background:linear-gradient(135deg,var(--accent),var(--gold),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:float 3s ease-in-out infinite;letter-spacing:2px}
+  .logo-sub{color:var(--muted);font-size:1rem;text-align:center;letter-spacing:3px;text-transform:uppercase;margin-top:-12px}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:28px;width:100%;max-width:420px;box-shadow:var(--shadow)}
+  .fg{margin-bottom:14px}
+  .fg label{display:block;font-weight:700;margin-bottom:5px;font-size:.85rem;color:var(--accent2)}
+  .fg input{width:100%;padding:11px 15px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:1rem;font-family:inherit;outline:none;transition:border-color .2s}
+  .fg input:focus{border-color:var(--accent)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 22px;border-radius:10px;font-size:.95rem;font-weight:800;font-family:inherit;cursor:pointer;border:none;transition:all .2s;width:100%}
+  .btn-p{background:linear-gradient(135deg,var(--accent),#e85d04);color:#fff}
+  .btn-p:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(255,107,53,.4)}
+  .btn-s{background:var(--surface2);color:var(--text);border:2px solid var(--border)}
+  .btn-s:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .btn-g{background:linear-gradient(135deg,var(--green),#05b58a);color:#fff}
+  .btn-g:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(6,214,160,.3)}
+  .btn-d{background:linear-gradient(135deg,var(--red),#c53b5a);color:#fff}
+  .btn-d:hover{transform:translateY(-2px)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+  .btn-sm{padding:8px 14px;font-size:.82rem;width:auto}
+  .sep{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--muted);font-size:.82rem}
+  .sep::before,.sep::after{content:'';flex:1;height:1px;background:var(--border)}
+
+  .room-list{max-height:280px;overflow-y:auto;margin-top:10px}
+  .ri{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;margin-bottom:7px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);transition:border-color .2s}
+  .ri:hover{border-color:var(--accent)}
+  .ri-name{font-weight:800;font-size:.9rem}
+  .ri-meta{font-size:.75rem;color:var(--muted)}
+  .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.72rem;font-weight:700}
+  .bw{background:rgba(255,215,0,.15);color:var(--gold)}
+  .bp{background:rgba(255,107,53,.15);color:var(--accent)}
+  .empty{text-align:center;padding:32px;color:var(--muted);font-size:.9rem}
+
+  /* ── WAITING ROOM ── */
+  #s-room{padding:16px;gap:16px}
+  .rh{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface);border-radius:var(--r);border:1px solid var(--border)}
+  .rid{font-family:'Fredoka One',cursive;font-size:1.6rem;color:var(--gold);letter-spacing:3px}
+  .rb{display:grid;grid-template-columns:1fr 300px;gap:16px;flex:1}
+  @media(max-width:700px){.rb{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border-radius:var(--r);border:1px solid var(--border);padding:18px;display:flex;flex-direction:column;gap:10px}
+  .pt{font-family:'Fredoka One',cursive;font-size:1.1rem;color:var(--accent2)}
+  .pi{display:flex;align-items:center;gap:9px;padding:9px 13px;background:var(--surface2);border-radius:9px;border:2px solid transparent}
+  .pi.host{border-color:var(--gold)}
+  .pi.me{border-color:var(--accent)}
+  .av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1rem;flex-shrink:0}
+  .pb{font-size:.68rem;padding:2px 7px;border-radius:8px;font-weight:700}
+  .pbh{background:rgba(255,215,0,.2);color:var(--gold)}
+  .pbm{background:rgba(255,107,53,.2);color:var(--accent)}
+
+  /* Chat */
+  .cbox{flex:1;overflow-y:auto;min-height:160px;max-height:260px;display:flex;flex-direction:column;gap:5px;padding-bottom:4px}
+  .cm{padding:6px 10px;border-radius:8px;font-size:.83rem}
+  .cm.sys{background:rgba(255,215,0,.1);color:var(--gold);font-style:italic;text-align:center}
+  .cm.other{background:var(--surface2)}
+  .cm.mine{background:rgba(255,107,53,.15);align-self:flex-end;text-align:right}
+  .cm .sn{font-weight:800;font-size:.72rem;margin-bottom:2px}
+  .ci{display:flex;gap:7px}
+  .ci input{flex:1;padding:9px 13px;background:var(--surface2);border:2px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:.88rem;outline:none}
+  .ci input:focus{border-color:var(--accent)}
+
+  /* ── GAME ── */
+  #s-game{padding:0;flex-direction:column}
+  .gtop{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:9px 14px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+  .ti{display:flex;align-items:center;gap:7px;padding:7px 14px;background:var(--surface2);border-radius:30px;font-weight:800}
+  .td{width:10px;height:10px;border-radius:50%;background:var(--green);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+  .tbw{width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden}
+  .tb{height:100%;background:var(--green);border-radius:3px;transition:width 1s linear,background .5s}
+  .tb.warn{background:var(--red)}
+
+  .gmain{display:grid;grid-template-columns:180px 1fr 260px;flex:1}
+  @media(max-width:860px){.gmain{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}}
+
+  /* Players sidebar */
+  .gpl{padding:14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - 58px)}
+  .gpc{padding:11px;background:var(--surface);border-radius:11px;border:2px solid transparent;transition:all .3s}
+  .gpc.cur{border-color:var(--green);background:rgba(6,214,160,.08)}
+  .gpc.win{border-color:var(--gold);background:rgba(255,215,0,.08)}
+  .gpc.out{opacity:.4}
+  .gpc-nm{font-weight:800;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gpc-sc{font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--gold);line-height:1}
+  .sbw{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:4px}
+  .sb{height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:2px;transition:width .5s}
+
+  /* Center board */
+  .gc{padding:18px;display:flex;flex-direction:column;align-items:center;gap:18px;overflow-y:auto}
+  .sl{font-family:'Fredoka One',cursive;font-size:.9rem;color:var(--accent2);text-transform:uppercase;letter-spacing:2px;text-align:center}
+
+  /* Flip cards */
+  .cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;width:100%;max-width:320px}
+  .fc{aspect-ratio:1;perspective:600px;cursor:pointer;border-radius:13px}
+  .fci{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .5s cubic-bezier(.175,.885,.32,1.275);border-radius:13px}
+  .fc.flipped .fci,.fc.peeked .fci{transform:rotateY(180deg)}
+  .cf{position:absolute;inset:0;border-radius:13px;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;align-items:center;justify-content:center;font-size:2rem;border:3px solid transparent;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  .cbk{background:linear-gradient(135deg,#2d2b4e,#1e1c3a);border-color:rgba(255,255,255,.07)}
+  .cbk::after{content:'?';font-family:'Fredoka One',cursive;font-size:1.8rem;color:rgba(255,255,255,.2)}
+  .cfr{background:#fef9ef;color:#333;transform:rotateY(180deg)}
+  .fc.sel .fci{box-shadow:0 0 0 3px var(--accent)!important}
+  .fc.sel-c .fci{box-shadow:0 0 0 3px var(--green)!important}
+  .fc.peek-h:hover .fci{box-shadow:0 0 0 3px var(--blue)}
+  .fc.flip-h:hover .fci{box-shadow:0 0 0 3px var(--accent)}
+  .fc.claim-h:hover .fci{box-shadow:0 0 0 3px var(--green)}
+
+  /* Action panel */
+  .ap{width:100%;max-width:320px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:15px}
+  .apt{font-family:'Fredoka One',cursive;font-size:.95rem;color:var(--accent2);margin-bottom:11px;text-align:center}
+  .ao{display:flex;flex-direction:column;gap:7px}
+  .ab{display:flex;align-items:center;gap:11px;padding:11px 14px;background:var(--surface2);border:2px solid var(--border);border-radius:11px;cursor:pointer;transition:all .2s;font-family:inherit;color:var(--text);font-size:.88rem;font-weight:700;text-align:left}
+  .ab:hover:not(:disabled){border-color:var(--accent);transform:translateX(4px)}
+  .ab:disabled{opacity:.3;cursor:not-allowed;transform:none}
+  .ab.active{border-color:var(--accent);background:rgba(255,107,53,.1)}
+  .ai{font-size:1.4rem;width:28px;text-align:center}
+  .ad{font-size:.72rem;color:var(--muted);font-weight:400}
+  .acr{display:flex;gap:7px;margin-top:10px}
+  .acr .btn{flex:1}
+  .ah{font-size:.78rem;color:var(--muted);text-align:center;margin-top:7px;min-height:18px}
+
+  /* Right panel */
+  .gr{padding:14px;border-left:1px solid var(--border);display:flex;flex-direction:column;gap:14px;overflow-y:auto;max-height:calc(100vh - 58px)}
+  .tc{display:flex;flex-direction:column;gap:9px}
+  .tcard{background:var(--surface);border:2px solid var(--border);border-radius:13px;padding:13px;cursor:pointer;transition:all .2s}
+  .tcard:hover{border-color:var(--accent);transform:translateX(-3px)}
+  .tcard.sel-t{border-color:var(--green);background:rgba(6,214,160,.07)}
+  .tn{font-weight:800;font-size:.88rem;margin-bottom:7px}
+  .tic{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px}
+  .tp{font-family:'Fredoka One',cursive;font-size:.88rem;color:var(--gold)}
+
+  /* Toast */
+  #toasts{position:fixed;top:72px;right:16px;z-index:999;display:flex;flex-direction:column;gap:7px;pointer-events:none}
+  .toast{padding:10px 18px;border-radius:11px;font-weight:700;font-size:.88rem;animation:tin .3s ease;max-width:280px;pointer-events:all;box-shadow:var(--shadow)}
+  .toast.s{background:var(--green);color:#fff}
+  .toast.e{background:var(--red);color:#fff}
+  .toast.i{background:var(--blue);color:#fff}
+  .toast.w{background:var(--gold);color:#000}
+  @keyframes tin{from{transform:translateX(80px);opacity:0}to{transform:translateX(0);opacity:1}}
+  @keyframes tout{to{transform:translateX(80px);opacity:0}}
+
+  /* Modal */
+  .mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;align-items:center;justify-content:center;padding:20px}
+  .mo.open{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:30px;max-width:460px;width:100%;text-align:center;animation:min .3s cubic-bezier(.175,.885,.32,1.275)}
+  @keyframes min{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+  .modal h2{font-family:'Fredoka One',cursive;font-size:1.9rem;margin-bottom:7px}
+  .modal p{color:var(--muted);margin-bottom:18px}
+  .pl{display:flex;flex-direction:column;gap:7px;margin:14px 0}
+  .pi2{display:flex;align-items:center;gap:11px;padding:11px 14px;background:var(--surface2);border-radius:9px}
+  .pr{font-family:'Fredoka One',cursive;font-size:1.4rem;width:34px;text-align:center}
+  .pn{flex:1;font-weight:800}
+  .ps{font-family:'Fredoka One',cursive;font-size:1.1rem;color:var(--gold)}
+
+  /* Shuffle anim */
+  @keyframes spop{0%{transform:scale(1)}30%{transform:scale(.8) rotate(-5deg)}60%{transform:scale(1.1) rotate(5deg)}100%{transform:scale(1)}}
+  .sh .fc{animation:spop .4s ease forwards}
+  .sh .fc:nth-child(1){animation-delay:.00s}.sh .fc:nth-child(2){animation-delay:.05s}
+  .sh .fc:nth-child(3){animation-delay:.10s}.sh .fc:nth-child(4){animation-delay:.15s}
+  .sh .fc:nth-child(5){animation-delay:.20s}.sh .fc:nth-child(6){animation-delay:.25s}
+  .sh .fc:nth-child(7){animation-delay:.30s}.sh .fc:nth-child(8){animation-delay:.35s}
+  .sh .fc:nth-child(9){animation-delay:.40s}
+
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:var(--surface2)}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+  .tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:.7rem;font-weight:700;margin-left:3px}
+  .tw{background:rgba(255,215,0,.2);color:var(--gold)}
+  .tl{background:rgba(239,71,111,.2);color:var(--red)}
+  @keyframes myglow{0%,100%{box-shadow:none}50%{box-shadow:0 0 30px rgba(6,214,160,.5)}}
+  .myglow{animation:myglow 1s ease 3}
+</style>
+</head>
+<body>
+
+<div id="toasts"></div>
+
+<!-- Modal Hasil -->
+<div class="mo" id="m-result">
+  <div class="modal">
+    <div id="m-res-icon" style="font-size:2.8rem;margin-bottom:10px"></div>
+    <h2 id="m-res-title"></h2>
+    <p  id="m-res-msg"></p>
+    <button class="btn btn-p" onclick="closeMo('m-result')">Oke!</button>
+  </div>
+</div>
+
+<!-- Modal Akhir Game -->
+<div class="mo" id="m-end">
+  <div class="modal">
+    <div style="font-size:2.8rem;margin-bottom:8px">🏆</div>
+    <h2 style="color:var(--gold)">Game Selesai!</h2>
+    <div class="pl" id="podium"></div>
+    <button class="btn btn-p" onclick="backLobby()">Kembali ke Lobby</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SCREEN: LOBBY
+═════════════════════════════════════════ -->
+<div id="s-lobby" class="screen active">
+  <div class="logo">Flipeek</div>
+  <div class="logo-sub">Game Kartu Multiplayer Real-Time</div>
+
+  <!-- Step 1: masukkan nama -->
+  <div class="card" id="c-name">
+    <div class="fg">
+      <label>Nama Pemain</label>
+      <input id="inp-name" placeholder="Masukkan nama kamu..." maxlength="20" />
+    </div>
+    <button class="btn btn-p" onclick="submitName()">Masuk sebagai Guest →</button>
+  </div>
+
+  <!-- Step 2: pilih opsi -->
+  <div class="card" id="c-main" style="display:none">
+    <div style="margin-bottom:14px">
+      <div style="font-size:.8rem;color:var(--muted)">Bermain sebagai</div>
+      <div id="lbl-name" style="font-weight:900;font-size:1.15rem"></div>
+    </div>
+    <button class="btn btn-p" onclick="doCreate()" style="margin-bottom:8px">🏠 Buat Room Baru</button>
+    <div class="sep">atau</div>
+    <div class="fg">
+      <label>Join via ID Room</label>
+      <div style="display:flex;gap:7px">
+        <input id="inp-rid" placeholder="6 karakter ID..." maxlength="6" style="text-transform:uppercase" />
+        <button class="btn btn-s btn-sm" onclick="doJoinById()">Join</button>
+      </div>
+    </div>
+    <div class="sep">atau</div>
+    <button class="btn btn-s" onclick="loadRoomList()">📋 Lihat Daftar Room Aktif</button>
+    <div class="room-list" id="rl" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SCREEN: WAITING ROOM
+═════════════════════════════════════════ -->
+<div id="s-room" class="screen">
+  <div class="rh">
+    <div>
+      <div style="font-size:.72rem;color:var(--muted)">ID Room</div>
+      <div class="rid" id="disp-rid">------</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-s btn-sm" onclick="copyId()">📋 Salin</button>
+      <button class="btn btn-d btn-sm" onclick="doLeaveRoom()">Keluar</button>
+    </div>
+  </div>
+  <div class="rb">
+    <!-- Pemain -->
+    <div class="panel">
+      <div class="pt">👥 Pemain di Room</div>
+      <div id="wpl" style="display:flex;flex-direction:column;gap:7px"></div>
+      <div style="margin-top:auto;padding-top:14px">
+        <button class="btn btn-g" id="btn-start" onclick="doStart()" disabled>▶️ Mulai Game (min. 2 pemain)</button>
+        <div id="start-hint" style="font-size:.75rem;color:var(--muted);text-align:center;margin-top:6px"></div>
+      </div>
+    </div>
+    <!-- Chat -->
+    <div class="panel">
+      <div class="pt">💬 Chat Room</div>
+      <div class="cbox" id="rchat"></div>
+      <div class="ci">
+        <input id="rchat-in" placeholder="Ketik pesan..." maxlength="200" onkeydown="if(event.key==='Enter')sendRoomChat()" />
+        <button class="btn btn-s btn-sm" onclick="sendRoomChat()">Kirim</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SCREEN: GAME
+═════════════════════════════════════════ -->
+<div id="s-game" class="screen">
+  <div class="gtop">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-family:'Fredoka One',cursive;color:var(--accent);font-size:1.25rem">Flipeek</span>
+      <div class="ti"><div class="td"></div><span id="turn-name">—</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px">
+      <span style="font-size:.78rem;color:var(--muted)">Waktu</span>
+      <div class="tbw"><div class="tb" id="tbar"></div></div>
+    </div>
+    <div style="display:flex;gap:7px;align-items:center">
+      <span id="round-disp" style="font-size:.82rem;color:var(--muted)">Ronde 1</span>
+      <button class="btn btn-d btn-sm" onclick="doLeaveGame()">Keluar</button>
+    </div>
+  </div>
+
+  <div class="gmain">
+    <div class="gpl" id="gpl"></div>
+    <div class="gc">
+      <div class="sl">⚡ Papan Permainan</div>
+      <div class="cgrid" id="cgrid"></div>
+      <div class="ap" id="ap">
+        <div class="apt" id="apt">Menunggu...</div>
+        <div class="ao"  id="ao"></div>
+        <div id="acnf"></div>
+        <div class="ah" id="ah"></div>
+      </div>
+    </div>
+    <div class="gr">
+      <div class="sl">🎯 Kartu Target</div>
+      <div class="tc" id="tc"></div>
+      <div class="sl" style="margin-top:4px">💬 Chat</div>
+      <div class="panel" style="padding:11px;flex:1">
+        <div class="cbox" id="gchat"></div>
+        <div class="ci" style="margin-top:7px">
+          <input id="gchat-in" placeholder="Pesan..." maxlength="150" onkeydown="if(event.key==='Enter')sendGameChat()" />
+          <button class="btn btn-s btn-sm" onclick="sendGameChat()">→</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     JAVASCRIPT CLIENT
+═════════════════════════════════════════ -->
+<script>
+const socket = io();
+
+// ── STATE ──────────────────────────────
+let myId='', myName='', myColor='';
+let roomId='', roomData=null, isHost=false;
+let gs=null;  // gameState
+let selAct=null, selCards=[], selTgt=null;
+let timerHandle=null, timerPct=100;
+
+// ── UTILS ──────────────────────────────
+function toast(msg,t='i',dur=3000){
+  const c=document.getElementById('toasts');
+  const el=document.createElement('div');
+  el.className=`toast ${t}`;el.textContent=msg;c.appendChild(el);
+  setTimeout(()=>{el.style.animation='tout .3s forwards';setTimeout(()=>el.remove(),300);},dur);
+}
+function openMo(id){document.getElementById(id).classList.add('open')}
+function closeMo(id){document.getElementById(id).classList.remove('open')}
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('s-'+id).classList.add('active');
+}
+function qs(sel){return document.querySelector(sel)}
+function addChat(boxId,sender,msg,sys=false){
+  const box=document.getElementById(boxId);
+  const el=document.createElement('div');
+  const isMe=sender===myName;
+  el.className=`cm ${sys?'sys':isMe?'mine':'other'}`;
+  if(!sys) el.innerHTML=`<div class="sn">${sender}</div>${escHtml(msg)}`;
+  else el.textContent=msg;
+  box.appendChild(el);
+  box.scrollTop=box.scrollHeight;
+}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ── LOBBY ──────────────────────────────
+document.getElementById('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')submitName()});
+document.getElementById('inp-rid').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase()});
+
+function submitName(){
+  const n=document.getElementById('inp-name').value.trim();
+  if(!n){toast('Masukkan nama dulu!','e');return;}
+  socket.emit('set_name',{name:n});
+}
+
+socket.on('name_set',({id,name,color})=>{
+  myId=id; myName=name; myColor=color;
+  document.getElementById('lbl-name').textContent=`👤 ${myName}`;
+  document.getElementById('c-name').style.display='none';
+  document.getElementById('c-main').style.display='block';
+});
+
+function doCreate(){socket.emit('create_room')}
+
+function loadRoomList(){
+  const el=document.getElementById('rl');
+  el.style.display='block';
+  el.innerHTML='<div class="empty">Memuat...</div>';
+  socket.emit('list_rooms');
+}
+
+socket.on('rooms_list',({rooms})=>{
+  const el=document.getElementById('rl');
+  if(!rooms.length){el.innerHTML='<div class="empty">🏚️ Belum ada room. Buat room baru!</div>';return;}
+  el.innerHTML=rooms.map(r=>`
+    <div class="ri">
+      <div><div class="ri-name">${escHtml(r.name)}</div><div class="ri-meta">ID: ${r.id} · ${r.playerCount} pemain</div></div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="badge bw">Menunggu</span>
+        <button class="btn btn-s btn-sm" onclick="doJoin('${r.id}')">Join</button>
+      </div>
+    </div>
+  `).join('');
+});
+
+function doJoinById(){
+  const id=document.getElementById('inp-rid').value.trim().toUpperCase();
+  if(id.length!==6){toast('ID Room harus 6 karakter!','e');return;}
+  doJoin(id);
+}
+function doJoin(id){socket.emit('join_room',{roomId:id})}
+
+// ── WAITING ROOM ───────────────────────
+socket.on('room_created',({room})=>{
+  roomId=room.id; roomData=room; isHost=true;
+  showScreen('room');
+  renderWaitRoom();
+  toast(`Room ${room.id} dibuat!`,'s');
+});
+
+socket.on('room_joined',({room})=>{
+  roomId=room.id; roomData=room;
+  isHost=room.hostId===myId;
+  showScreen('room');
+  renderWaitRoom();
+  toast(`Bergabung ke room ${room.id}!`,'s');
+});
+
+socket.on('player_joined',({player})=>{
+  if(roomData&&!roomData.players.find(p=>p.id===player.id)){
+    roomData.players.push(player);
+  }
+  renderWaitRoom();
+  addChat('rchat',null,`${player.name} bergabung!`,true);
+});
+
+socket.on('player_left',({playerId,name})=>{
+  if(roomData) roomData.players=roomData.players.filter(p=>p.id!==playerId);
+  renderWaitRoom();
+});
+
+socket.on('host_changed',({newHostId,name})=>{
+  if(roomData) roomData.hostId=newHostId;
+  isHost=newHostId===myId;
+  if(isHost) toast('Kamu sekarang menjadi Host!','i');
+  renderWaitRoom();
+});
+
+socket.on('room_chat',({sender,msg,system})=>{
+  addChat('rchat',sender,msg,system);
+});
+
+function renderWaitRoom(){
+  if(!roomData) return;
+  document.getElementById('disp-rid').textContent=roomData.id;
+  const plist=document.getElementById('wpl');
+  plist.innerHTML=roomData.players.map(p=>`
+    <div class="pi ${p.id===roomData.hostId?'host':''} ${p.id===myId?'me':''}">
+      <div class="av" style="background:${p.color}25;color:${p.color}">${p.name[0].toUpperCase()}</div>
+      <div style="flex:1;font-weight:700">${escHtml(p.name)}</div>
+      ${p.id===roomData.hostId?'<span class="pb pbh">Host</span>':''}
+      ${p.id===myId?'<span class="pb pbm">Kamu</span>':''}
+    </div>
+  `).join('');
+
+  const btn=document.getElementById('btn-start');
+  const hint=document.getElementById('start-hint');
+  if(isHost){
+    btn.style.display='';
+    btn.disabled=roomData.players.length<2;
+    hint.textContent=roomData.players.length<2?'Menunggu pemain lain bergabung...':`${roomData.players.length} pemain siap!`;
+  } else {
+    btn.style.display='none';
+    hint.textContent='Menunggu host memulai...';
+  }
+}
+
+function sendRoomChat(){
+  const inp=document.getElementById('rchat-in');
+  const msg=inp.value.trim(); if(!msg) return;
+  inp.value='';
+  addChat('rchat',myName,msg);
+  socket.emit('room_chat',{msg});
+}
+
+function doStart(){socket.emit('start_game')}
+
+function copyId(){
+  navigator.clipboard.writeText(roomId||'').then(()=>toast('ID disalin!','s'));
+}
+
+function doLeaveRoom(){
+  socket.emit('leave_room');
+  roomData=null; roomId=''; isHost=false;
+  showScreen('lobby');
+}
+
+// ── GAME START ─────────────────────────
+socket.on('game_start',({gameState})=>{
+  gs=gameState;
+  selAct=null; selCards=[]; selTgt=null;
+  showScreen('game');
+  renderGame();
+  startTimer();
+});
+
+// ── RENDER GAME ────────────────────────
+function renderGame(){
+  if(!gs) return;
+  renderPlayers();
+  renderBoard();
+  renderTargets();
+  renderActionPanel();
+  renderTurnIndicator();
+}
+
+function renderTurnIndicator(){
+  const cur=gs.players.find(p=>p.id===gs.currentTurnPlayerId);
+  document.getElementById('turn-name').textContent=cur?(cur.id===myId?'Giliranmu!':cur.name):'—';
+  document.getElementById('round-disp').textContent=`Ronde ${gs.round}`;
+}
+
+function renderPlayers(){
+  const el=document.getElementById('gpl');
+  el.innerHTML=gs.players.map(p=>{
+    const isCur=p.id===gs.currentTurnPlayerId&&p.status==='playing';
+    const pct=Math.min(100,(p.score/10)*100);
+    let tag='';
+    if(p.status==='winner') tag='<span class="tag tw">👑 Winner</span>';
+    else if(p.status==='loser') tag='<span class="tag tl">💀 Loser</span>';
+    else if(p.status==='left') tag='<span style="font-size:.7rem;color:var(--muted)">keluar</span>';
+    return `
+      <div class="gpc ${isCur?'cur':''} ${p.status==='winner'?'win':''} ${p.status==='loser'||p.status==='left'?'out':''}">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px">
+          <div style="width:26px;height:26px;border-radius:50%;background:${p.color}30;color:${p.color};display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.82rem;flex-shrink:0">${p.name[0].toUpperCase()}</div>
+          <div class="gpc-nm">${escHtml(p.name)} ${p.id===myId?'<span style="color:var(--accent);font-size:.68rem">(Kamu)</span>':''}</div>
+        </div>
+        ${tag}
+        <div style="display:flex;align-items:baseline;gap:4px;margin-top:3px">
+          <div class="gpc-sc">${p.score}</div>
+          <div style="font-size:.68rem;color:var(--muted)">/ 10</div>
+        </div>
+        <div class="sbw"><div class="sb" style="width:${pct}%"></div></div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderBoard(){
+  const grid=document.getElementById('cgrid');
+  const myTurn=gs.currentTurnPlayerId===myId;
+  const me=gs.players.find(p=>p.id===myId);
+  grid.innerHTML='';
+  gs.board.forEach((card,i)=>{
+    const div=document.createElement('div');
+    div.className='fc';
+    if(card.faceUp||card._peek) div.classList.add('flipped');
+
+    if(myTurn&&me?.status==='playing'&&!card.faceUp){
+      if(selAct==='peek')  div.classList.add('peek-h');
+      if(selAct==='flip')  div.classList.add(selCards.includes(i)?'sel':'flip-h');
+      if(selAct==='claim') div.classList.add(selCards.includes(i)?'sel-c':'claim-h');
+    }
+
+    div.innerHTML=`<div class="fci"><div class="cf cbk"></div><div class="cf cfr">${card.icon||''}</div></div>`;
+    div.addEventListener('click',()=>onCard(i));
+    grid.appendChild(div);
+  });
+}
+
+function renderTargets(){
+  const el=document.getElementById('tc');
+  el.innerHTML=gs.targets.map((t,i)=>`
+    <div class="tcard ${selAct==='claim'&&selTgt===i?'sel-t':''}" onclick="onTarget(${i})">
+      <div class="tn">🎯 ${escHtml(t.name)}</div>
+      <div class="tic">${t.icons.map(ic=>`<span style="font-size:1.3rem">${ic}</span>`).join('')}</div>
+      <div class="tp">⭐ ${t.points} poin</div>
+    </div>
+  `).join('');
+}
+
+function renderActionPanel(){
+  const myTurn=gs.currentTurnPlayerId===myId;
+  const me=gs.players.find(p=>p.id===myId);
+  const apt=document.getElementById('apt');
+  const ao=document.getElementById('ao');
+  const acnf=document.getElementById('acnf');
+  const ah=document.getElementById('ah');
+  ah.textContent=''; acnf.innerHTML='';
+
+  if(me?.status==='winner'){apt.textContent='🏆 Kamu menang!';ao.innerHTML='';return}
+  if(me?.status==='loser'){apt.textContent='💀 Kamu kalah';ao.innerHTML='';return}
+  if(me?.status==='left'){apt.textContent='Kamu sudah keluar';ao.innerHTML='';return}
+
+  if(!myTurn){
+    const cur=gs.players.find(p=>p.id===gs.currentTurnPlayerId);
+    apt.textContent=cur?`Giliran ${cur.name}...`:'Menunggu...';
+    ao.innerHTML=''; return;
+  }
+
+  apt.textContent='🎮 Giliranmu! Pilih aksi:';
+  ao.innerHTML=`
+    <button class="ab ${selAct==='peek'?'active':''}" onclick="selAction('peek')">
+      <span class="ai">👁️</span><div><div>Peek — Intip 1 Kartu</div><div class="ad">Hanya kamu lihat (2 detik)</div></div>
+    </button>
+    <button class="ab ${selAct==='flip'?'active':''}" onclick="selAction('flip')">
+      <span class="ai">🔄</span><div><div>Flip — Buka 2 Kartu</div><div class="ad">Semua pemain lihat (3-4 detik)</div></div>
+    </button>
+    <button class="ab ${selAct==='claim'?'active':''}" onclick="selAction('claim')">
+      <span class="ai">🎯</span><div><div>Claim — Klaim Target</div><div class="ad">Cocokkan icon dengan target</div></div>
+    </button>
+  `;
+
+  if(selAct==='peek') ah.textContent='Klik 1 kartu yang ingin diintip';
+  else if(selAct==='flip'){
+    ah.textContent=`Pilih 2 kartu (${selCards.length}/2 dipilih)`;
+    if(selCards.length===2)
+      acnf.innerHTML=`<div class="acr"><button class="btn btn-g" onclick="doFlip()">Flip Sekarang!</button><button class="btn btn-s" onclick="cancelSel()">Batal</button></div>`;
+  } else if(selAct==='claim'){
+    if(selTgt===null) ah.textContent='Pilih kartu target terlebih dahulu →';
+    else {
+      const needed=gs.targets[selTgt].icons.length;
+      ah.textContent=`Pilih ${needed} kartu yang cocok (${selCards.length}/${needed} dipilih)`;
+      if(selCards.length===needed)
+        acnf.innerHTML=`<div class="acr"><button class="btn btn-g" onclick="doClaim()">Konfirmasi Claim!</button><button class="btn btn-s" onclick="cancelSel()">Batal</button></div>`;
+    }
+  }
+}
+
+// ── ACTION HANDLERS ────────────────────
+function selAction(a){
+  if(gs.currentTurnPlayerId!==myId) return;
+  selAct=a; selCards=[]; selTgt=null;
+  renderBoard(); renderTargets(); renderActionPanel();
+}
+function cancelSel(){selAct=null;selCards=[];selTgt=null;renderBoard();renderTargets();renderActionPanel()}
+
+function onCard(idx){
+  if(gs.currentTurnPlayerId!==myId) return;
+  const me=gs.players.find(p=>p.id===myId);
+  if(me?.status!=='playing') return;
+  if(!selAct){toast('Pilih aksi dulu!','w');return}
+  const card=gs.board[idx];
+  if(card.faceUp){toast('Kartu sudah terbuka!','w');return}
+
+  if(selAct==='peek'){
+    socket.emit('action_peek',{cardIdx:idx});
+    selAct=null; renderBoard(); renderActionPanel();
+  } else if(selAct==='flip'){
+    if(selCards.includes(idx)) selCards=selCards.filter(c=>c!==idx);
+    else if(selCards.length<2) selCards.push(idx);
+    renderBoard(); renderActionPanel();
+  } else if(selAct==='claim'){
+    if(selTgt===null){toast('Pilih kartu target dulu!','w');return}
+    const needed=gs.targets[selTgt].icons.length;
+    if(selCards.includes(idx)) selCards=selCards.filter(c=>c!==idx);
+    else if(selCards.length<needed) selCards.push(idx);
+    else toast(`Target ini butuh tepat ${needed} kartu!`,'w');
+    renderBoard(); renderActionPanel();
+  }
+}
+
+function onTarget(idx){
+  if(gs.currentTurnPlayerId!==myId) return;
+  if(selAct!=='claim') selAction('claim');
+  selTgt=idx; selCards=[];
+  renderTargets(); renderBoard(); renderActionPanel();
+}
+
+function doFlip(){
+  if(selCards.length!==2) return;
+  socket.emit('action_flip',{cardIdxs:selCards});
+  selAct=null; selCards=[];
+  renderBoard(); renderActionPanel();
+}
+
+function doClaim(){
+  if(selTgt===null||selCards.length===0) return;
+  socket.emit('action_claim',{targetIdx:selTgt, cardIdxs:selCards});
+  selAct=null; selCards=[]; selTgt=null;
+  renderBoard(); renderTargets(); renderActionPanel();
+}
+
+// ── TIMER ──────────────────────────────
+function startTimer(){
+  clearInterval(timerHandle);
+  const start=Date.now(), total=30000;
+  timerHandle=setInterval(()=>{
+    const pct=Math.max(0,100-((Date.now()-start)/total)*100);
+    const bar=document.getElementById('tbar');
+    if(bar){bar.style.width=pct+'%';bar.className='tb'+(pct<30?' warn':'');}
+    if(pct<=0) clearInterval(timerHandle);
+  },100);
+}
+
+// ── SOCKET GAME EVENTS ─────────────────
+socket.on('peek_reveal',({cardIdx,icon})=>{
+  if(!gs) return;
+  gs.board[cardIdx]._peek=true;
+  gs.board[cardIdx].icon=icon;
+  renderBoard();
+  toast(`👁️ Kartu: ${icon}`,'i',2000);
+});
+socket.on('peek_hide',({cardIdx})=>{
+  if(!gs) return;
+  gs.board[cardIdx]._peek=false;
+  renderBoard();
+});
+
+socket.on('flip_reveal',({cardIdxs,icons})=>{
+  if(!gs) return;
+  cardIdxs.forEach((i,n)=>{gs.board[i].faceUp=true;gs.board[i].icon=icons[n];});
+  renderBoard();
+});
+socket.on('flip_hide',({cardIdxs})=>{
+  if(!gs) return;
+  cardIdxs.forEach(i=>{gs.board[i].faceUp=false;});
+  renderBoard();
+});
+
+socket.on('claim_reveal',({cardIdxs,icons})=>{
+  if(!gs) return;
+  cardIdxs.forEach((i,n)=>{gs.board[i].faceUp=true;gs.board[i].icon=icons[n];});
+  renderBoard();
+});
+
+socket.on('claim_success',({playerId,targetIdx,points,newScore,isWinner,newBoard,newTargets,players})=>{
+  if(!gs) return;
+  gs.board=newBoard; gs.targets=newTargets; gs.players=players;
+  const nm=gs.players.find(p=>p.id===playerId)?.name;
+  if(playerId===myId){
+    toast(`✅ BENAR! +${points} poin! Total: ${newScore}`,'s',4000);
+    if(isWinner) toast('🏆 Kamu MENANG!','s',6000);
+  } else toast(`${nm} berhasil klaim! +${points} poin`,'i');
+  animShuffle(); renderGame();
+});
+
+socket.on('claim_fail',({playerId,newBoard,newTargets})=>{
+  if(!gs) return;
+  gs.board=newBoard; gs.targets=newTargets;
+  const nm=gs.players.find(p=>p.id===playerId)?.name;
+  if(playerId===myId) toast('❌ SALAH! Papan diacak!','e',5000);
+  else toast(`${nm} gagal — papan & target diacak!`,'w');
+  animShuffle(); renderGame();
+});
+
+socket.on('turn_advanced',({currentTurnIdx,currentTurnPlayerId,round,players})=>{
+  if(!gs) return;
+  gs.currentTurnIdx=currentTurnIdx;
+  gs.currentTurnPlayerId=currentTurnPlayerId;
+  gs.round=round; gs.players=players;
+  selAct=null; selCards=[]; selTgt=null;
+  renderGame(); startTimer();
+  if(currentTurnPlayerId===myId){
+    toast('🎮 Giliran kamu!','i');
+    document.getElementById('ap').classList.add('myglow');
+    setTimeout(()=>document.getElementById('ap').classList.remove('myglow'),3000);
+  }
+});
+
+socket.on('player_status_update',({players})=>{
+  if(gs){gs.players=players;renderPlayers();}
+});
+
+socket.on('game_log',({msg})=>{
+  addChat('gchat',null,msg,true);
+});
+
+socket.on('game_chat',({sender,msg})=>{
+  addChat('gchat',sender,msg);
+});
+
+socket.on('game_end',({finalState})=>{
+  gs=finalState; clearInterval(timerHandle);
+  renderGame(); showEndGame();
+});
+
+socket.on('player_left',({playerId,name})=>{
+  if(gs){
+    const p=gs.players.find(p=>p.id===playerId);
+    if(p) p.status='left';
+    renderPlayers();
+  }
+  if(roomData) roomData.players=roomData.players.filter(p=>p.id!==playerId);
+});
+
+socket.on('err',({msg})=>{toast(msg,'e')});
+
+// ── END GAME ───────────────────────────
+function showEndGame(){
+  const sorted=[...gs.players].sort((a,b)=>{
+    if(a.status==='winner') return -1;
+    if(b.status==='winner') return 1;
+    return b.score-a.score;
+  });
+  const ranks=['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+  document.getElementById('podium').innerHTML=sorted.map((p,i)=>`
+    <div class="pi2">
+      <div class="pr">${ranks[i]||'—'}</div>
+      <div class="pn">${escHtml(p.name)} ${p.id===myId?'<span style="color:var(--accent)">(Kamu)</span>':''}</div>
+      <div class="ps">${p.score} poin</div>
+    </div>
+  `).join('');
+  setTimeout(()=>openMo('m-end'),1000);
+}
+
+function backLobby(){
+  closeMo('m-end');
+  clearInterval(timerHandle);
+  gs=null; roomData=null; roomId=''; isHost=false;
+  selAct=null; selCards=[]; selTgt=null;
+  showScreen('lobby');
+}
+
+function doLeaveGame(){
+  socket.emit('leave_room');
+  clearInterval(timerHandle);
+  gs=null; roomData=null; roomId=''; isHost=false;
+  showScreen('lobby');
+}
+
+// ── SHUFFLE ANIMATION ──────────────────
+function animShuffle(){
+  const g=document.getElementById('cgrid');
+  g.classList.add('sh');
+  setTimeout(()=>g.classList.remove('sh'),900);
+}
+
+console.log('🎮 Flipeek client siap!');
+</script>
+</body>
+</html>
