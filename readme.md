@@ -145,4 +145,5 @@ Setiap giliran, kamu **wajib memilih 1** dari 3 aksi berikut:
 
 ---
 
-*Selamat bermain! 🎮*
+Disclaimer !
+Ini game yang dibuat 100% oleh ai, namun ide nya tidak
